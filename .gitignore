@@ -1,0 +1,22 @@
+# Dependencies and generated builds
+tauri-app/node_modules/
+tauri-app/dist/
+tauri-app/src-tauri/target/
+tauri-app/src-tauri/gen/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.key
+*.key.pub
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+*.log
+
+# Local visual QA captures
+tauri-window*.png
+warehouse-*.png

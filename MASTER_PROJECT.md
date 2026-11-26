@@ -1,0 +1,625 @@
+# SIAMBRUK — Master Project Specification
+
+## 1. Project Identity
+
+**Official Name:** SIAMBRUK  
+**Full Name:** Sistem Informasi Alfa Mabruk
+
+**Project Description:**
+
+SIAMBRUK is an integrated inventory management and decision-support system designed for Alfa Mabruk, a small retail business selling packaged snacks and similar products.
+
+The system helps the business manage products, product variants, stock, purchases, sales, inventory movements, reports, and product priority evaluations.
+
+The application must be practical, reliable, maintainable, and suitable for actual small-business operations.
+
+## 2. Main Technology Stack
+
+Build the application using:
+
+- Tauri 2
+- Vue 3
+- TypeScript
+- Vite
+- Vue Router
+- Pinia
+- Tailwind CSS
+- Rust for Tauri backend commands
+- SQLite for local data storage
+- Lucide icons
+
+### Technology restrictions
+
+- Do not use React.
+- Do not use Next.js.
+- Do not use Electron.
+- Do not use Flutter or React Native.
+- Do not require an Android emulator.
+- Do not introduce unnecessary technologies or dependencies.
+
+The initial product is a desktop application.
+
+Keep frontend business logic portable so that a web version can be developed later. Abstract Tauri-specific functionality behind service interfaces. Do not assume that a Tauri desktop application automatically becomes a web application.
+
+## 3. Main Objectives
+
+The system must support:
+
+1. Product and category management.
+2. Product variant management.
+3. Inventory and stock tracking.
+4. Purchase and stock-in recording.
+5. Sales recording.
+6. Automatic stock deduction after sales.
+7. Inventory movement history.
+8. Dashboard and business summaries.
+9. Reports and data export.
+10. SMART-based product variant priority ranking.
+
+The system should prioritize accurate inventory data and understandable business operations over unnecessary features.
+
+## 4. Product and Variant Management
+
+Products represent the general product identity.
+
+Variants represent individual sellable units with their own attributes.
+
+Example:
+
+Product: Keripik Balado
+
+- Variant 1: 250g
+- Variant 2: 500g
+
+Each variant must have its own:
+
+- SKU or unique identifier
+- Variant name
+- Purchase price
+- Selling price
+- Current stock
+- Minimum stock threshold
+- Stock movement history
+- Sales history
+- Profit calculations
+- SMART evaluation results
+
+Never combine different variants when calculating sales, profit, or SMART scores.
+
+## 5. Inventory Management
+
+The system must support:
+
+- Recording incoming stock.
+- Recording outgoing stock.
+- Recording stock adjustments.
+- Viewing current stock per variant.
+- Viewing inventory movement history.
+- Setting minimum stock thresholds.
+- Identifying low-stock variants.
+- Preventing invalid stock operations.
+- Maintaining accurate stock balances.
+
+Every inventory change must be recorded with its date, quantity, movement type, and relevant explanation or reference.
+
+Sales must automatically reduce the corresponding variant's stock.
+
+Purchase or stock-in records must increase the corresponding variant's stock.
+
+Use database transactions for operations that modify multiple related records.
+
+## 6. Sales Management
+
+The sales module must support:
+
+- Creating sales transactions.
+- Adding multiple variants to one transaction.
+- Specifying quantities.
+- Recording selling prices.
+- Calculating subtotals and totals.
+- Calculating profit using the appropriate purchase cost.
+- Automatically deducting stock.
+- Viewing transaction history.
+
+Profit must be calculated consistently using the recorded purchase cost and actual selling price.
+
+The system should preserve historical transaction values. Changes to current product prices must not alter previous sales records.
+
+## 7. SMART Product Variant Priority Ranking
+
+### Purpose
+
+Implement a genuine SMART (Simple Multi-Attribute Rating Technique) decision-support module.
+
+Its purpose is to evaluate and rank individual product variants based on their business performance and inventory characteristics.
+
+**The evaluation unit is an individual product variant, not the parent product.**
+
+For example, Keripik Balado 250g and Keripik Balado 500g must receive independent scores and rankings.
+
+### Criteria and weights
+
+The following criteria and weights are fixed project requirements:
+
+| Criterion | Weight | Type |
+|---|---:|---|
+| Keuntungan (Profit) | 30% | Benefit |
+| Produk Terjual (Units Sold) | 40% | Benefit |
+| Stok (Remaining Stock) | 15% | Cost |
+| Harga Pembelian (Purchase Price) | 15% | Cost |
+| Total | 100% | |
+
+Do not silently change these weights or criterion classifications.
+
+The weights must be stored in the database and should be configurable by an authorized user in the future, while retaining the specified values as the initial defaults.
+
+### Criterion definitions
+
+**1. Keuntungan — 30% (Benefit)**
+
+Measures the total profit generated by an individual variant during the selected evaluation period.
+
+Higher profit receives a higher utility score.
+
+Use recorded sales and purchase costs to calculate profit consistently.
+
+**2. Produk Terjual — 40% (Benefit)**
+
+Measures the total quantity of an individual variant sold during the selected evaluation period.
+
+Higher sales quantity receives a higher utility score.
+
+**3. Stok — 15% (Cost)**
+
+Measures the remaining stock quantity of an individual variant at the evaluation date.
+
+Lower remaining stock receives a higher utility score.
+
+This criterion represents inventory scarcity in the ranking. A high SMART score must not automatically trigger a purchase or restocking action.
+
+**4. Harga Pembelian — 15% (Cost)**
+
+Measures the purchase cost per unit of an individual variant.
+
+Lower purchase price receives a higher utility score.
+
+Use a clearly defined and consistent purchase-cost source. If purchase prices change over time, use a documented method such as the weighted average purchase cost or another consistently applied costing method. Preserve the historical values used in each evaluation.
+
+### SMART calculation
+
+Implement the complete SMART process:
+
+1. Identify the product variants being evaluated.
+2. Collect raw values for all four criteria.
+3. Apply the assigned criterion weights.
+4. Normalize the weights so that their total equals 1.
+5. Normalize each criterion's raw values into utility values.
+6. Multiply each utility value by its normalized criterion weight.
+7. Sum the weighted values to calculate the final score.
+8. Rank variants in descending order of final score.
+
+For benefit criteria:
+
+\[
+u_{ij}=\frac{x_{ij}-x_{j,\min}}{x_{j,\max}-x_{j,\min}}
+\]
+
+For cost criteria:
+
+\[
+u_{ij}=\frac{x_{j,\max}-x_{ij}}{x_{j,\max}-x_{j,\min}}
+\]
+
+Final SMART score:
+
+\[
+S_i=\sum_{j=1}^{n}w_j u_{ij}
+\]
+
+Where:
+
+- \(S_i\) = final score of variant \(i\)
+- \(w_j\) = normalized weight of criterion \(j\)
+- \(u_{ij}\) = normalized utility of variant \(i\) for criterion \(j\)
+- \(x_{ij}\) = raw value of variant \(i\) for criterion \(j\)
+
+Display the final score consistently, preferably as a percentage from 0 to 100 for user readability.
+
+### Calculation safeguards
+
+The implementation must correctly handle:
+
+- Equal minimum and maximum values for a criterion.
+- Zero sales.
+- Zero stock.
+- Missing purchase cost.
+- Insufficient transaction history.
+- Invalid or incomplete data.
+- Invalid weights.
+- Variants without sales during the evaluation period.
+- Changes in product or purchase prices.
+- Variants with incomplete historical information.
+
+Do not allow division by zero or silently invent missing data.
+
+If all variants have the same value for a criterion, use a documented neutral utility treatment, such as assigning the same utility to all alternatives for that criterion. Explain this behavior in the methodology documentation.
+
+Do not treat missing values as zero unless zero is genuinely the recorded value.
+
+### Evaluation period
+
+Users must be able to select an evaluation period, such as:
+
+- Daily
+- Weekly
+- Monthly
+- Custom date range
+
+Profit and units sold must use the selected period.
+
+Remaining stock must use a clearly defined stock snapshot at the evaluation date.
+
+Purchase price must use a consistently defined cost value relevant to the evaluation.
+
+All four criteria must have clearly documented time references so the evaluation is understandable and reproducible.
+
+### SMART results interface
+
+Display:
+
+- Variant name and SKU.
+- Raw profit value.
+- Total units sold.
+- Remaining stock.
+- Purchase price per unit.
+- Criterion weights.
+- Normalized utility values.
+- Weighted criterion contributions.
+- Final SMART score.
+- Final ranking position.
+
+Provide:
+
+- Ranking table sorted by score.
+- Evaluation period selection.
+- Detailed explanation of each variant's score.
+- Ranking history.
+- Weight configuration.
+- Exportable evaluation results.
+
+The user should be able to understand why one variant ranks above another.
+
+SMART is a decision-support feature. It must never automatically change inventory, create purchases, or make business decisions without user confirmation.
+
+## 8. Dashboard
+
+Create a practical dashboard containing relevant business information, such as:
+
+- Total active products.
+- Total product variants.
+- Total inventory quantity.
+- Daily sales.
+- Revenue.
+- Estimated profit.
+- Low-stock variants.
+- Top-selling variants.
+- Recent inventory movements.
+- Latest SMART ranking results.
+
+Avoid decorative or meaningless statistics.
+
+Every displayed number must come from actual database records or clearly identified demonstration data.
+
+## 9. Reports
+
+Provide useful reports for:
+
+- Sales.
+- Revenue and profit.
+- Inventory.
+- Stock movements.
+- Product and variant performance.
+- SMART evaluation results.
+
+Support suitable export formats such as CSV and PDF where practical.
+
+Reports must use consistent calculations and clearly display their date ranges.
+
+## 10. Database Design
+
+Use a normalized relational SQLite database.
+
+Suggested core tables:
+
+- categories
+- products
+- product_variants
+- inventory_movements
+- purchases
+- purchase_items
+- sales
+- sale_items
+- settings
+
+Additional SMART tables:
+
+- smart_criteria
+- smart_evaluations
+- smart_evaluation_details
+- smart_ranking_results
+
+Design appropriate relationships, foreign keys, indexes, constraints, and migrations.
+
+### SMART historical snapshots
+
+Every completed SMART evaluation must preserve the information needed to reproduce its result.
+
+Store:
+
+- Evaluation date and period.
+- Criterion names and weights used.
+- Raw values for every evaluated variant.
+- Normalized utility values.
+- Weighted contributions.
+- Final scores.
+- Ranking positions.
+- Relevant costing assumptions.
+
+Historical evaluations must not change when current product information, weights, or inventory values change.
+
+## 11. Architecture and Code Quality
+
+Use a clear separation of responsibilities:
+
+- Vue components for presentation.
+- Pinia for application state where appropriate.
+- Services or repositories for business operations.
+- Rust commands for desktop/backend operations.
+- SQLite for persistent storage.
+
+Avoid placing all application logic inside Vue components.
+
+Use TypeScript types and validation.
+
+Keep calculations, especially SMART calculations, independently testable.
+
+Use database migrations rather than relying on manual database creation.
+
+Provide useful error messages and safe failure handling.
+
+## 12. Development Approach
+
+Build the application incrementally.
+
+Recommended stages:
+
+1. Inspect the development environment and prerequisites.
+2. Initialize the Tauri 2 + Vue 3 + TypeScript project.
+3. Establish the application shell and navigation.
+4. Implement SQLite database setup and migrations.
+5. Implement categories, products, and variants.
+6. Implement inventory management.
+7. Implement purchases and stock-in operations.
+8. Implement sales and stock deduction.
+9. Implement dashboard and reports.
+10. Implement and test the SMART calculation engine.
+11. Build the SMART ranking interface.
+12. Perform integration testing and polish.
+
+Do not generate the entire application in one uncontrolled implementation.
+
+After each stage, verify that the project builds and existing functionality still works.
+
+## 13. Important Project Principles
+
+- Correctness before visual complexity.
+- Real database functionality rather than fake demonstrations.
+- Accurate stock and sales calculations.
+- Independent variant-level records and evaluations.
+- Transparent SMART methodology.
+- Maintainable architecture.
+- Desktop-first development.
+- Future web compatibility through separation of frontend and platform-specific services.
+- Clear documentation.
+
+The final result must be a functional application suitable for demonstrating and explaining the business workflow of Alfa Mabruk.
+
+## 14. 3D Interactive Shop and Warehouse Simulation
+
+### Purpose
+
+SIAMBRUK must include a fully interactive 3D shop or warehouse environment.
+
+The experience should resemble a small shop management or simulation game rather than a flat inventory diagram.
+
+The user should feel like they are inside a physical shop, surrounded by shelves, products, storage areas, and other environmental objects.
+
+This is an interactive visualization of the actual inventory system, not a separate game with fictional inventory.
+
+### Technology
+
+Use Three.js with TypeScript for 3D rendering and interactions.
+
+Integrate the 3D environment into the existing Vue 3 application.
+
+Recommended dependencies:
+- three
+- @types/three
+
+Use additional Three.js controls or helpers only when necessary.
+
+Do not use PixiJS for this feature.
+
+Do not introduce a separate game engine such as Unity or Unreal Engine.
+
+The 3D environment must run inside the Tauri 2 desktop application.
+
+### 3D Environment Design
+
+Create an actual three-dimensional room containing:
+
+- Floor and walls.
+- Shelves and storage racks.
+- Product packages and boxes.
+- A checkout counter.
+- A storage or restocking area.
+- Appropriate lighting and shadows.
+- Environmental decorations that make the room feel like a real shop.
+
+The environment must have depth and perspective.
+
+Do not create another flat canvas with rectangles pretending to be a 3D environment.
+
+Use coherent proportions, realistic object placement, and consistent materials.
+
+### Visual Style
+
+Use a polished, stylized 3D simulation-game aesthetic.
+
+The preferred direction is a cozy, clean, low-poly shop environment.
+
+The environment should look visually appealing without requiring photorealistic graphics.
+
+Use recognizable product packaging and distinguishable shelves.
+
+Avoid empty rooms, floating objects, placeholder cubes, primitive-looking shelves, and excessively plain environments.
+
+Product objects should resemble actual packaged retail goods rather than generic colored blocks.
+
+### Camera and Movement
+
+Implement an interactive camera that allows the user to explore the room.
+
+Preferred controls:
+
+- WASD: Move around.
+- Mouse: Look around.
+- Mouse click: Select an object.
+- Escape: Exit interaction or release camera control.
+
+Implement sensible movement boundaries and collision detection so the camera cannot pass through walls or shelves.
+
+Provide an appropriate starting camera position and a way to return to the default view.
+
+Movement and camera controls must not interfere with normal application navigation or form inputs.
+
+### Product Interaction
+
+Every product shelf and product package must be connected to an actual product variant in the database.
+
+When the user points at an interactive object:
+- Highlight the object subtly.
+- Show a recognizable interaction indicator.
+- Display the corresponding product or variant name.
+
+When the user clicks a product:
+- Select the corresponding variant.
+- Display its stock quantity.
+- Display purchase and selling prices.
+- Display relevant sales and profit information.
+- Provide actions to restock, record a sale, or view full details.
+
+### Inventory Visualization
+
+The number of visible product packages must correspond to actual inventory quantities using a documented visual scaling rule.
+
+For large quantities, use a capped visual representation and display the exact stock quantity separately.
+
+Visual stock conditions:
+- High stock: Shelves appear well-stocked.
+- Medium stock: Shelves appear partially stocked.
+- Low stock: Shelves appear nearly empty.
+- Zero stock: Shelves are empty.
+
+Use the configured minimum stock threshold to determine low-stock conditions.
+
+Each product variant must have its own designated shelf position or clearly identifiable storage location.
+
+### Restocking Interaction
+
+When the user chooses to restock:
+
+1. Open a restocking interface.
+2. Select or confirm the variant.
+3. Enter the incoming quantity.
+4. Display the relevant purchase information.
+5. Ask for confirmation.
+6. Execute the normal stock-in operation.
+7. Update the database.
+8. Refresh the 3D representation only after successful completion.
+
+Animate the packages appearing on the shelf after the database confirms the operation.
+
+### Sales Interaction
+
+When the user chooses to sell:
+
+1. Open the sales interface.
+2. Confirm the selected variant.
+3. Enter the quantity.
+4. Validate available stock.
+5. Confirm the transaction.
+6. Execute the normal sales operation.
+7. Deduct inventory through the existing sales service.
+8. Update the 3D representation after successful completion.
+
+Animate the removal of packages after the operation succeeds.
+
+### Animation
+
+Use purposeful 3D animations, such as:
+
+- Packages appearing on shelves.
+- Packages being removed from shelves.
+- Subtle object highlighting.
+- Smooth camera movement.
+- Opening and closing interaction panels.
+- Small environmental animations.
+
+Animations must be smooth and lightweight.
+
+Do not sacrifice performance for unnecessary effects.
+
+### Data and Architecture
+
+Three.js must never become a separate source of inventory data.
+
+The 3D environment must communicate with the existing Vue services and application state.
+
+All stock changes must use the same validated business operations and SQLite database transactions as the regular inventory pages.
+
+Do not modify stock directly from 3D object click handlers.
+
+The standard inventory pages and 3D environment must always display consistent data.
+
+### Fallback and Accessibility
+
+The application must retain conventional inventory tables and forms.
+
+Users must be able to manage inventory without using the 3D environment.
+
+Provide a way to reset the camera and access products through an alternative selection interface.
+
+Respect reduced-motion preferences where practical.
+
+### Performance
+
+Optimize the 3D scene for ordinary desktop computers.
+
+Use:
+- Efficient geometry.
+- Reusable materials.
+- Instanced rendering for repeated packages when appropriate.
+- Optimized textures.
+- Sensible lighting and shadows.
+- Resource cleanup when leaving the 3D page.
+
+Avoid loading unnecessarily large 3D assets.
+
+The environment should remain responsive during ordinary inventory operations.
+
+### Final Objective
+
+The SIAMBRUK 3D environment should feel like entering and interacting with a small shop management simulation game.
+
+It must be visually convincing, genuinely interactive, connected to real inventory records, and useful for demonstrating the application.
