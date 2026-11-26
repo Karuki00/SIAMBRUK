@@ -36,7 +36,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFBODkwM0Y4QzBFOEU4RDEKUldUUjZPakErQU9KcXY4SkxLencvNUpiZXdoQ1lWY29UdHdRODFyVkRwQndMYjBaTXNMeEJGWGEK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ4MDlBNjdBRjFDNUNEOUQKUldTZHpjWHhlcVlKU0wweTAzUWFoMG5ZL1VuY2xHNUp6cTRFTzdzbUlBVWdjQkhpR1dERjRkT1kK",
       "endpoints": [
         "https://github.com/Karuki00/SIAMBRUK/releases/latest/download/latest.json"
       ],
