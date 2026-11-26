@@ -13,6 +13,7 @@ const isPurchase = computed(() => route.path === "/purchases");
 const variants = ref<Variant[]>([]);
 const variantId = ref<number | null>(null);
 const quantity = ref(1);
+const unitsProduced = ref(1);
 const unitValue = ref(0);
 const date = ref(new Date().toISOString().slice(0, 10));
 const reference = ref("");
@@ -22,6 +23,8 @@ const error = ref("");
 const message = ref("");
 const lastTransaction = ref<Transaction | null>(null);
 const transactionHistory = ref<TransactionHistory[]>([]);
+const purchaseUnitCost = computed(() => unitsProduced.value > 0 ? Math.round(unitValue.value / unitsProduced.value) : 0);
+const purchaseUnitQuantity = computed(() => quantity.value * unitsProduced.value);
 
 const formatMoney = (value: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
 
@@ -35,13 +38,13 @@ async function load() {
       const rows = await invoke<Array<{ id: number; reference: string | null; sold_at: string; total_amount: number; total_profit: number }>>("list_sales_history");
       transactionHistory.value = rows.map((row) => ({ id: row.id, reference: row.reference, date: row.sold_at, total_amount: row.total_amount, total_profit: row.total_profit }));
     }
-  }
-  catch (e) { error.value = String(e); }
+  } catch (e) { error.value = String(e); }
 }
 
 function resetForm() {
   variantId.value = null;
   quantity.value = 1;
+  unitsProduced.value = 1;
   unitValue.value = 0;
   date.value = new Date().toISOString().slice(0, 10);
   reference.value = "";
@@ -55,17 +58,21 @@ function resetForm() {
 
 function chooseVariant() {
   const variant = variants.value.find((item) => item.id === variantId.value);
-  if (variant) unitValue.value = isPurchase.value ? variant.purchase_price : variant.selling_price;
+  if (variant) unitValue.value = isPurchase.value ? variant.purchase_price * unitsProduced.value : variant.selling_price;
 }
 
 async function submit() {
   error.value = "";
   message.value = "";
-  if (!variantId.value || quantity.value <= 0 || !date.value) { error.value = "Varian, tanggal, dan jumlah yang valid wajib diisi."; return; }
+  const validPurchase = !isPurchase.value || (unitsProduced.value > 0 && unitValue.value > 0 && purchaseUnitCost.value > 0);
+  if (!variantId.value || quantity.value <= 0 || !date.value || !validPurchase || (!isPurchase.value && unitValue.value < 0)) {
+    error.value = isPurchase.value ? "Varian, tanggal, jumlah bal, unit hasil kemasan, dan harga per bal yang valid wajib diisi." : "Varian, tanggal, dan jumlah yang valid wajib diisi.";
+    return;
+  }
   loading.value = true;
   try {
     const input = isPurchase.value
-      ? { reference: reference.value || null, purchased_at: date.value, notes: notes.value || null, items: [{ variant_id: variantId.value, quantity: quantity.value, unit_cost: unitValue.value }] }
+      ? { reference: reference.value || null, purchased_at: date.value, notes: notes.value || null, items: [{ variant_id: variantId.value, quantity: purchaseUnitQuantity.value, unit_cost: purchaseUnitCost.value }] }
       : { reference: reference.value || null, sold_at: date.value, notes: notes.value || null, items: [{ variant_id: variantId.value, quantity: quantity.value, unit_price: unitValue.value }] };
     lastTransaction.value = await invoke<Transaction>(isPurchase.value ? "create_purchase" : "create_sale", { input });
     message.value = `${isPurchase.value ? "Pembelian" : "Penjualan"} berhasil dicatat.`;
@@ -86,7 +93,14 @@ onMounted(load);
     <div class="section-intro"><div><p class="eyebrow">Transaksi</p><h2>{{ isPurchase ? "Pembelian dan stok masuk" : "Penjualan" }}</h2><p class="intro-copy">{{ isPurchase ? "Catat stok masuk melalui transaksi pembelian agar saldo dan riwayat bergerak bersama." : "Catat penjualan dengan validasi stok dan perhitungan laba dari biaya tersimpan." }}</p></div></div>
     <p v-if="error" class="form-error">{{ error }}</p><p v-if="message" class="form-success">{{ message }}</p>
     <div class="content-columns">
-      <form class="panel form-panel" @submit.prevent="submit"><div class="panel-heading"><div><p class="eyebrow">Transaksi baru</p><h3>{{ isPurchase ? "Stok masuk" : "Penjualan" }}</h3></div><component :is="isPurchase ? ClipboardList : ShoppingCart" :size="18" class="panel-icon" /></div><label>Varian<select v-model="variantId" @change="chooseVariant"><option :value="null">Pilih varian</option><option v-for="variant in variants" :key="variant.id" :value="variant.id">{{ variant.product_name }} — {{ variant.name }} (stok {{ variant.current_stock }})</option></select></label><div class="form-row"><label>Tanggal<input v-model="date" type="date" /></label><label>Jumlah<input v-model.number="quantity" type="number" min="1" /></label></div><label>{{ isPurchase ? "Harga beli per unit" : "Harga jual per unit" }}<input v-model.number="unitValue" type="number" min="0" /></label><label>Referensi <span class="optional">opsional</span><input v-model="reference" placeholder="Nomor nota atau referensi" /></label><label>Catatan <span class="optional">opsional</span><textarea v-model="notes" rows="3"></textarea></label><button class="primary-button" :disabled="loading" type="submit">{{ loading ? "Menyimpan..." : `Simpan ${isPurchase ? "pembelian" : "penjualan"}` }}</button></form>
+      <form class="panel form-panel" @submit.prevent="submit">
+        <div class="panel-heading"><div><p class="eyebrow">Transaksi baru</p><h3>{{ isPurchase ? "Stok masuk" : "Penjualan" }}</h3></div><component :is="isPurchase ? ClipboardList : ShoppingCart" :size="18" class="panel-icon" /></div>
+        <label>Varian<select v-model="variantId" @change="chooseVariant"><option :value="null">Pilih varian</option><option v-for="variant in variants" :key="variant.id" :value="variant.id">{{ variant.product_name }} — {{ variant.name }} (stok {{ variant.current_stock }})</option></select></label>
+        <div class="form-row"><label>Tanggal<input v-model="date" type="date" /></label><label>{{ isPurchase ? "Jumlah bal" : "Jumlah unit" }}<input v-model.number="quantity" type="number" min="1" step="1" /></label></div>
+        <template v-if="isPurchase"><div class="form-row"><label>Unit hasil dari bal<input v-model.number="unitsProduced" type="number" min="1" step="1" /></label><label>Harga beli per bal<input v-model.number="unitValue" type="number" min="1" step="1" /></label></div><p class="field-hint">{{ quantity }} bal menghasilkan {{ purchaseUnitQuantity }} unit setelah dikemas. Biaya per unit: <strong>{{ formatMoney(purchaseUnitCost) }}</strong></p></template>
+        <label v-else>Harga jual per unit<input v-model.number="unitValue" type="number" min="0" /></label>
+        <label>Referensi <span class="optional">opsional</span><input v-model="reference" placeholder="Nomor nota atau referensi" /></label><label>Catatan <span class="optional">opsional</span><textarea v-model="notes" rows="3"></textarea></label><button class="primary-button" :disabled="loading" type="submit">{{ loading ? "Menyimpan..." : `Simpan ${isPurchase ? "pembelian" : "penjualan"}` }}</button>
+      </form>
       <section class="panel transaction-control"><div class="panel-heading"><div><p class="eyebrow">Kontrol transaksi</p><h3>Nilai tercatat</h3></div></div><div v-if="lastTransaction" class="transaction-result"><strong>{{ formatMoney(lastTransaction.total_amount) }}</strong><span>Total transaksi #{{ lastTransaction.id }}</span><span v-if="!isPurchase">Laba tercatat: {{ formatMoney(lastTransaction.total_profit) }}</span></div><div v-else-if="!transactionHistory.length" class="table-state"><component :is="isPurchase ? ClipboardList : ShoppingCart" :size="22" /><strong>Belum ada transaksi</strong><span>Transaksi yang berhasil akan muncul di sini.</span></div><div v-if="transactionHistory.length" class="transaction-history"><div v-for="item in transactionHistory.slice(0, 5)" :key="item.id" class="transaction-history-row"><span><strong>{{ item.reference || `#${item.id}` }}</strong><small>{{ item.date }}</small></span><span><strong>{{ formatMoney(item.total_amount) }}</strong><small v-if="!isPurchase">Laba {{ formatMoney(item.total_profit) }}</small></span></div></div></section>
     </div>
   </section>

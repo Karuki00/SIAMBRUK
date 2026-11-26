@@ -11,7 +11,7 @@ async function load() { loading.value = true; error.value = ""; try { [products.
 function edit(product: Product) { editingId.value = product.id; name.value = product.name; categoryId.value = categories.value.find((category) => category.name === product.category_name)?.id ?? null; description.value = product.description ?? ""; }
 function cancelEdit() { editingId.value = null; name.value = ""; categoryId.value = null; description.value = ""; }
 async function save() { if (!name.value.trim()) { error.value = "Nama produk wajib diisi."; return; } saving.value = true; error.value = ""; try { const input = { name: name.value, category_id: categoryId.value, description: description.value || null }; if (editingId.value) await invoke("update_product", { input: { ...input, id: editingId.value } }); else await invoke("create_product", { input }); cancelEdit(); await load(); } catch (e) { error.value = String(e); } finally { saving.value = false; } }
-async function remove(product: Product) { if (!window.confirm(`Hapus produk ${product.name}? Produk yang memiliki varian tidak dapat dihapus.`)) return; try { await invoke("delete_product", { productId: product.id }); await load(); } catch (e) { error.value = String(e); } }
+async function remove(product: Product) { if (!window.confirm(`Hapus produk ${product.name}? Riwayat transaksi tetap disimpan, tetapi produk dengan stok aktif harus dikosongkan terlebih dahulu.`)) return; try { await invoke("delete_product", { productId: product.id }); await load(); } catch (e) { error.value = String(e); } }
 onMounted(load);
 </script>
 

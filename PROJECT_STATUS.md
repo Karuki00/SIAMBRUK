@@ -1,6 +1,7 @@
 # Project Status
 
 **Date:** 2026-11-26  
+**Release target:** v0.1.1  
 **Phase:** Complete — MASTER_PROJECT requirements implemented and verified
 
 ## Latest Fix
@@ -17,6 +18,10 @@
 - All table panels now use a `540px` shared height so the next-page control remains visible; panel and navigation elevation is consistent across the UI.
 - Pagination now occupies its own fixed-height footer section inside each table panel, while the table content area flexes independently and cannot clip the navigation buttons.
 - Standard table bodies now render eight fixed-height row slots; missing slots are blank, non-interactive rows that do not affect record totals or page counts.
+- Pembelian kini menggunakan jumlah bal, unit hasil dari bal, dan harga per bal; stok unit serta biaya per unit dihitung otomatis (contoh: Rp100.000 / 20 = Rp5.000 per unit).
+- Pembelian kini menggunakan jumlah bal, unit hasil dari bal, dan harga per bal; istilah form menjelaskan hasil kemasan dan biaya per unit tetap dihitung otomatis.
+- Penghapusan produk sudah mendukung produk yang memiliki varian tanpa stok aktif melalui soft-delete, sehingga riwayat transaksi tetap aman; produk dengan stok aktif masih dilindungi.
+- SKU varian dapat dikosongkan di Inventori; aplikasi otomatis membuat kode `SKU-...` sebelum menyimpan varian.
 
 ## Current State
 

@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import {
+  computed,
   onBeforeUnmount,
   onMounted,
   reactive,
@@ -85,6 +86,24 @@ interface Flight {
 }
 type Vec3 = [number, number, number];
 type DeskTab = "category" | "product" | "variant";
+/* Buttons a tutorial step can offer: fly to the desk, or open a desk form. */
+type TutorialAction =
+  | "show-desk"
+  | "desk-category"
+  | "desk-product"
+  | "desk-variant";
+interface TutorialStep {
+  title: string;
+  body: string[];
+  tip?: string;
+  action?: TutorialAction;
+}
+interface TutorialTopic {
+  id: string;
+  label: string;
+  summary: string;
+  steps: TutorialStep[];
+}
 
 /* ------------------------------------------------------------------ */
 /* Layout constants. Numbers come from measuring supermarket-operations.glb */
@@ -207,6 +226,224 @@ const DESK_TABS: { id: DeskTab; label: string }[] = [
   { id: "variant", label: "Varian & stok awal" },
 ];
 
+/* Shopkeeper tutorial. Labels in the text match the real buttons and fields
+   (tab names, "Buat kategori", "Konfirmasi operasi", ...), so update both
+   places if you rename something in the UI. */
+const TUTORIAL_ACTION_LABELS: Record<TutorialAction, string> = {
+  "show-desk": "Tunjukkan meja alat tulis",
+  "desk-category": "Buka form kategori",
+  "desk-product": "Buka form produk",
+  "desk-variant": "Buka form varian",
+};
+const TUTORIAL_TOPICS: TutorialTopic[] = [
+  {
+    id: "alur",
+    label: "Alur kerja dari nol",
+    summary: "Urutan dari kategori sampai barang tampil di rak.",
+    steps: [
+      {
+        title: "Empat lapis data",
+        body: [
+          "Toko ini menyimpan barang dalam empat lapis. Kategori mengelompokkan produk, misalnya Makanan ringan.",
+          "Produk adalah nama dasar barang, misalnya Seblak. Varian adalah kemasan atau ukuran yang benar-benar dijual, misalnya 250gr, lengkap dengan SKU dan harga. Stok adalah jumlah dari varian itu.",
+        ],
+      },
+      {
+        title: "Urutan membuat",
+        body: [
+          "Mulai dari atas: buat kategori, lalu produk, lalu varian. Semuanya dibuat di meja alat tulis, di sudut kiri belakang toko.",
+          "Barang baru muncul di rak setelah punya varian.",
+        ],
+        action: "show-desk",
+      },
+      {
+        title: "Setelah barang tampil",
+        body: [
+          "Varian yang punya stok tampil sebagai kotak di rak, lengkap dengan label harga. Klik untuk restock atau mencatat penjualan, atau seret untuk memindahkannya ke rak lain.",
+          "Pilih topik lain di menu untuk melihat tiap langkah lebih rinci.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "navigasi",
+    label: "Berkeliling toko",
+    summary: "Bergerak, melihat, dan berinteraksi dengan isi toko.",
+    steps: [
+      {
+        title: "Bergerak dan melihat",
+        body: [
+          "Tekan W, A, S, D atau tombol panah untuk berjalan. Tahan dan tarik mouse untuk melihat sekeliling. Roda mouse menggerakkan Anda maju dan mundur.",
+        ],
+        tip: "Tombol Reset kamera di atas ruang 3D mengembalikan Anda ke pintu masuk.",
+      },
+      {
+        title: "Berinteraksi",
+        body: [
+          "Klik produk atau label harganya untuk memilihnya. Klik meja alat tulis untuk membuka katalog. Klik saya, atau tekan E saat dekat, untuk membuka tutorial ini.",
+          "Gelembung E muncul di atas saya dan di atas meja saat Anda cukup dekat.",
+        ],
+      },
+      {
+        title: "Isi toko",
+        body: [
+          "Rak berlabel RAK A, RAK B, dan seterusnya, di dinding belakang dan di dua pulau tengah. Buah ada di keranjang sepanjang dinding kiri. Kasir ada di kanan depan, dan meja alat tulis di kiri belakang.",
+          "Tombol Masuk Mode Imersif di kanan atas memperbesar ruang 3D.",
+        ],
+        action: "show-desk",
+      },
+    ],
+  },
+  {
+    id: "kategori",
+    label: "Membuat kategori",
+    summary: "Kelompok barang, misalnya Makanan ringan.",
+    steps: [
+      {
+        title: "Datangi meja alat tulis",
+        body: [
+          "Meja alat tulis ada di sudut kiri belakang, di bawah papan ALAT TULIS. Klik meja itu, atau tekan E saat Anda dekat, untuk membuka katalog.",
+        ],
+        action: "show-desk",
+      },
+      {
+        title: "Isi nama kategori",
+        body: [
+          "Di jendela yang terbuka, pilih tab Kategori. Ketik nama kategori pada kolom Nama kategori, misalnya Makanan ringan, lalu klik Buat kategori.",
+          "Pesan hijau mengonfirmasi hasilnya, dan kategori baru muncul di daftar di bawah tombol.",
+        ],
+        action: "desk-category",
+      },
+      {
+        title: "Tips menamai",
+        body: [
+          "Kategori dipakai untuk mengelompokkan produk, jadi pilih nama yang pendek dan mudah dikenali. Buat semua kategori yang Anda butuhkan lebih dulu, supaya muncul di pilihan saat membuat produk.",
+        ],
+        tip: "Kategori bersifat opsional. Produk tanpa kategori tetap bisa dibuat.",
+      },
+    ],
+  },
+  {
+    id: "produk",
+    label: "Membuat produk",
+    summary: "Nama dasar barang, misalnya Seblak atau Susu.",
+    steps: [
+      {
+        title: "Buka tab Produk",
+        body: [
+          "Buka meja alat tulis, lalu pilih tab Produk.",
+        ],
+        action: "desk-product",
+      },
+      {
+        title: "Isi nama dan kategori",
+        body: [
+          "Pada Nama produk, tulis nama dasarnya saja tanpa ukuran, misalnya Seblak. Ukuran ditulis nanti sebagai varian.",
+          "Pada Kategori, pilih kategori yang sesuai atau biarkan Tanpa kategori. Lalu klik Buat produk.",
+        ],
+        tip: "Bentuk kotak di rak ditentukan dari nama produk. Susu tampil sebagai kotak susu, seblak sebagai kotak sereal, dan apel sebagai buah di keranjang. Gunakan nama yang jelas supaya tampilannya tepat.",
+      },
+      {
+        title: "Belum tampil di rak",
+        body: [
+          "Produk yang baru dibuat belum muncul di rak, karena rak menampilkan varian. Lanjutkan ke topik Membuat varian & stok awal untuk memasukkannya ke toko.",
+        ],
+        action: "desk-variant",
+      },
+    ],
+  },
+  {
+    id: "varian",
+    label: "Membuat varian & stok awal",
+    summary: "Ukuran, harga, dan jumlah barang pertama.",
+    steps: [
+      {
+        title: "Pilih produk dan nama varian",
+        body: [
+          "Buka tab Varian & stok awal. Pilih Produk dari daftar, lalu isi Nama varian dengan ukuran atau kemasannya, misalnya 250gr atau 1 liter.",
+          "Kolom SKU boleh dikosongkan. Sistem akan membuat kode otomatis.",
+        ],
+        action: "desk-variant",
+      },
+      {
+        title: "Atur harga",
+        body: [
+          "Harga beli adalah modal per unit dari pemasok. Harga jual adalah harga per unit untuk pembeli. Contohnya beli Rp 5.000 dan jual Rp 10.000.",
+          "Harga beli dipakai saat restock, dan harga jual dipakai saat mencatat penjualan.",
+        ],
+      },
+      {
+        title: "Stok minimum dan stok awal",
+        body: [
+          "Stok minimum adalah batas peringatan. Label rak berubah merah saat stok sama dengan atau di bawah angka ini.",
+          "Stok awal adalah jumlah barang yang sudah ada sekarang. Jumlah ini dicatat sebagai pembelian dari Meja alat tulis, jadi riwayat stok tetap rapi. Jika diisi 0, rak hanya menampilkan label HABIS.",
+        ],
+      },
+      {
+        title: "Lihat hasilnya",
+        body: [
+          "Klik Buat varian. Ruang toko dimuat ulang dan varian baru muncul di tingkat rak yang kosong, dikelompokkan dengan kemasan yang sama.",
+          "Label hijau berarti stok aman, merah berarti stok rendah, dan gelap berarti HABIS. Setiap tingkat rak menampilkan hingga 10 kotak.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "stok",
+    label: "Restock dan catat penjualan",
+    summary: "Menambah atau mengurangi stok dari rak.",
+    steps: [
+      {
+        title: "Pilih paket di rak",
+        body: [
+          "Klik produk atau label harganya. Kamera mendekat, dan panel Objek terpilih di sisi kanan menampilkan stok serta harga beli dan jual.",
+          "Anda juga bisa memilih dari daftar varian di bawah ruang 3D.",
+        ],
+      },
+      {
+        title: "Pilih aksi dan jumlah",
+        body: [
+          "Pada Aksi, pilih Restock untuk menambah stok, atau Catat penjualan untuk mengurangi stok. Isi Jumlah dengan angka 1 atau lebih.",
+        ],
+      },
+      {
+        title: "Konfirmasi",
+        body: [
+          "Klik Konfirmasi operasi. Jumlah kotak di rak dan label harga ikut berubah setelah data tersimpan.",
+          "Jika ada masalah, pesan kesalahan muncul merah di atas ruang 3D.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "rak",
+    label: "Mengatur susunan rak",
+    summary: "Memindahkan atau menukar produk antar rak.",
+    steps: [
+      {
+        title: "Seret produk",
+        body: [
+          "Tekan dan tahan produk, lalu geser ke rak atau tingkat lain. Produk melayang mengikuti mouse, dan kotak berwarna menyorot tempat tujuannya. Lepas untuk menjatuhkannya.",
+        ],
+        tip: "Tekan Esc saat menyeret untuk membatalkan.",
+      },
+      {
+        title: "Arti warna sorotan",
+        body: [
+          "Hijau berarti tempat itu kosong, jadi produk dipindahkan ke sana. Emas berarti tempat itu sudah terisi, jadi kedua produk saling bertukar.",
+        ],
+      },
+      {
+        title: "Keranjang buah dan reset",
+        body: [
+          "Buah hanya bisa dipindah antar keranjang di dinding kiri, dan barang kering hanya antar rak.",
+          "Susunan tersimpan di perangkat ini. Tombol Reset susunan rak di atas ruang 3D mengembalikannya ke urutan bawaan.",
+        ],
+      },
+    ],
+  },
+];
+
 /* ------------------------------------------------------------------ */
 /* Vue state                                                            */
 /* ------------------------------------------------------------------ */
@@ -222,6 +459,26 @@ const hovered = ref("");
 const immersive = ref(false);
 const dialogueOpen = ref(false);
 const overflow = ref(0);
+
+/* shopkeeper tutorial: null topic = the topic menu */
+const tutorialTopicId = ref<string | null>(null);
+const tutorialStep = ref(0);
+const currentTopic = computed(
+  () => TUTORIAL_TOPICS.find((t) => t.id === tutorialTopicId.value) ?? null,
+);
+const currentStep = computed(
+  () => currentTopic.value?.steps[tutorialStep.value] ?? null,
+);
+const isLastStep = computed(
+  () =>
+    !!currentTopic.value &&
+    tutorialStep.value >= currentTopic.value.steps.length - 1,
+);
+const tutorialHint = computed(() =>
+  variants.value.length === 0
+    ? "Toko Anda masih kosong. Mulai dari Alur kerja dari nol, lalu Membuat kategori."
+    : `Ada ${variants.value.length} varian di toko. Pilih topik yang ingin Anda pelajari.`,
+);
 
 /* stationery desk modal */
 const deskOpen = ref(false);
@@ -1832,7 +2089,7 @@ function selectFromObject(object: THREE.Object3D | undefined) {
     return;
   }
   if (target?.userData.interaction === "shopkeeper") {
-    dialogueOpen.value = true;
+    openTutorial();
     return;
   }
   const id = target?.userData.variantId as number | undefined;
@@ -1911,20 +2168,12 @@ function setupSceneOverlay() {
     .querySelector("button")!
     .addEventListener("click", () => setImmersive(false));
   overlay.append(hud);
-  const dialogue = document.createElement("div");
-  dialogue.className = "scene-dialogue";
-  dialogue.innerHTML = `<strong>Penjaga Toko Alfa Mabruk</strong><p>Selamat datang di Toko Alfa Mabruk!</p><p>Saya bisa membantu Anda mengenal ruang inventori SIAMBRUK.</p><button type="button">Tutup dialog</button>`;
-  dialogue.querySelector("button")!.addEventListener("click", () => {
-    dialogueOpen.value = false;
-  });
-  overlay.append(dialogue);
   host.value.append(overlay);
   syncOverlay = () => {
     hud.classList.toggle("visible", immersive.value);
     toggle.textContent = immersive.value
       ? "Keluar Mode Imersif"
       : "Masuk Mode Imersif";
-    dialogue.classList.toggle("visible", dialogueOpen.value);
     const stats = hud.querySelector(".scene-hud-stats");
     if (stats)
       stats.textContent = `${variants.value.length} varian · ${summary.value?.total_stock ?? "—"} unit · ${summary.value?.low_stock_count ?? "—"} stok rendah · ${summary.value?.sales_today ?? "—"} terjual hari ini`;
@@ -2211,14 +2460,21 @@ function onKeyDown(event: KeyboardEvent) {
     endItemDrag(false);
     return;
   }
+  if (key === "escape" && dialogueOpen.value) {
+    closeTutorial();
+    return;
+  }
   if (key === "escape" && immersive.value) {
     setImmersive(false);
     return;
   }
   if (key === "e") {
-    if (npc && camera.position.distanceTo(npc.position) < 4.5)
-      dialogueOpen.value = true;
-    else if (deskGroup && flatDistance(deskGroup.position) < DESK_INTERACT_RADIUS)
+    if (npc && camera.position.distanceTo(npc.position) < 4.5) {
+      if (!dialogueOpen.value) openTutorial();
+    } else if (
+      deskGroup &&
+      flatDistance(deskGroup.position) < DESK_INTERACT_RADIUS
+    )
       openDesk();
   }
   keys.add(key);
@@ -2415,6 +2671,79 @@ async function transact() {
 
 /* ------------------------------------------------------------------ */
 /* Stationery desk modal: categories, products, variants                */
+/* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+/* Shopkeeper tutorial                                                  */
+/* ------------------------------------------------------------------ */
+function openTutorial() {
+  tutorialTopicId.value = null;
+  tutorialStep.value = 0;
+  dialogueOpen.value = true;
+}
+function closeTutorial() {
+  dialogueOpen.value = false;
+}
+function startTopic(id: string) {
+  tutorialTopicId.value = id;
+  tutorialStep.value = 0;
+}
+function backToMenu() {
+  tutorialTopicId.value = null;
+  tutorialStep.value = 0;
+}
+function nextStep() {
+  if (isLastStep.value) backToMenu();
+  else tutorialStep.value += 1;
+}
+function prevStep() {
+  if (tutorialStep.value > 0) tutorialStep.value -= 1;
+  else backToMenu();
+}
+/* Smoothly walk the camera to a spot where the desk fills the view. */
+function showDesk() {
+  if (!camera) return;
+  const to = new THREE.Vector3(
+    DESK_POSITION[0] + 3.2,
+    1.8,
+    DESK_POSITION[2] + 0.4,
+  );
+  const look = new THREE.Vector3(DESK_POSITION[0], 0.9, DESK_POSITION[2]);
+  const dx = look.x - to.x;
+  const dz = look.z - to.z;
+  flight = {
+    fromPos: camera.position.clone(),
+    toPos: to,
+    fromYaw: camera.rotation.y,
+    toYaw: Math.atan2(-dx, -dz),
+    fromPitch: camera.rotation.x,
+    toPitch: THREE.MathUtils.clamp(
+      Math.atan2(look.y - to.y, Math.hypot(dx, dz)),
+      -0.5,
+      0.5,
+    ),
+    t: 0,
+    duration: 1.1,
+  };
+}
+function runTutorialAction(kind: TutorialAction) {
+  if (kind === "show-desk") {
+    showDesk();
+    return;
+  }
+  /* the form opens on top of the scene, so the dialogue steps aside */
+  const tab: DeskTab =
+    kind === "desk-category"
+      ? "category"
+      : kind === "desk-product"
+        ? "product"
+        : "variant";
+  closeTutorial();
+  deskTab.value = tab;
+  openDesk();
+}
+
+/* ------------------------------------------------------------------ */
+/* Stationery desk data                                                 */
 /* ------------------------------------------------------------------ */
 async function loadDeskData() {
   try {
@@ -2666,6 +2995,82 @@ onBeforeUnmount(() => {
     </p>
 
     <Teleport to="body">
+      <div
+        v-if="dialogueOpen"
+        class="tutor"
+        role="dialog"
+        aria-label="Tutorial penjaga toko"
+      >
+        <header class="tutor-head">
+          <div class="tutor-avatar" aria-hidden="true">AM</div>
+          <div class="tutor-who">
+            <strong>Penjaga Toko Alfa Mabruk</strong>
+            <span v-if="currentTopic">{{ currentTopic.label }}</span>
+            <span v-else>Pemandu SIAMBRUK</span>
+          </div>
+          <button
+            class="tutor-close"
+            type="button"
+            aria-label="Tutup tutorial"
+            @click="closeTutorial"
+          >
+            ×
+          </button>
+        </header>
+
+        <div v-if="!currentTopic" class="tutor-body">
+          <p class="tutor-text">
+            Selamat datang di Toko Alfa Mabruk! Saya akan menemani Anda
+            mengelola toko ini. Mau belajar apa?
+          </p>
+          <p class="tutor-hint">{{ tutorialHint }}</p>
+          <ul class="tutor-menu">
+            <li v-for="topic in TUTORIAL_TOPICS" :key="topic.id">
+              <button type="button" @click="startTopic(topic.id)">
+                <strong>{{ topic.label }}</strong>
+                <span>{{ topic.summary }}</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <div v-else-if="currentStep" class="tutor-body">
+          <p class="tutor-progress">
+            Langkah {{ tutorialStep + 1 }} dari
+            {{ currentTopic.steps.length }}
+          </p>
+          <h4 class="tutor-title">{{ currentStep.title }}</h4>
+          <p v-for="(line, i) in currentStep.body" :key="i" class="tutor-text">
+            {{ line }}
+          </p>
+          <p v-if="currentStep.tip" class="tutor-tip">
+            <strong>Tips:</strong> {{ currentStep.tip }}
+          </p>
+          <button
+            v-if="currentStep.action"
+            class="primary-button tutor-action"
+            type="button"
+            @click="runTutorialAction(currentStep.action)"
+          >
+            {{ TUTORIAL_ACTION_LABELS[currentStep.action] }}
+          </button>
+          <footer class="tutor-nav">
+            <button class="secondary-button" type="button" @click="backToMenu">
+              Menu topik
+            </button>
+            <span class="tutor-spacer"></span>
+            <button class="secondary-button" type="button" @click="prevStep">
+              Sebelumnya
+            </button>
+            <button class="primary-button" type="button" @click="nextStep">
+              {{ isLastStep ? "Selesai" : "Berikutnya" }}
+            </button>
+          </footer>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
       <div v-if="deskOpen" class="desk-backdrop" @click.self="closeDesk">
         <div
           class="desk-modal"
@@ -2807,6 +3212,151 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.tutor {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 9000;
+  width: min(640px, 94vw);
+  max-height: 70vh;
+  overflow: auto;
+  padding: 16px 18px 14px;
+  transform: translateX(-50%);
+  border: 2px solid #d8a85f;
+  border-radius: 14px;
+  background: #fffaf0;
+  color: #2b3b38;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  animation: tutor-in 0.22s ease-out;
+}
+@keyframes tutor-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tutor {
+    animation: none;
+  }
+}
+.tutor-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.tutor-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #2b3b38;
+  color: #d8a85f;
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+.tutor-who {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.tutor-who span {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+.tutor-close {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #2b3b38;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.tutor-close:hover {
+  background: #e3ebe4;
+}
+.tutor-body {
+  display: grid;
+  gap: 8px;
+}
+.tutor-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.tutor-text,
+.tutor-hint,
+.tutor-tip,
+.tutor-progress {
+  margin: 0;
+  line-height: 1.5;
+}
+.tutor-progress {
+  font-size: 0.8rem;
+  opacity: 0.65;
+}
+.tutor-hint {
+  font-size: 0.85rem;
+  color: #315e55;
+}
+.tutor-tip {
+  padding: 8px 10px;
+  border-left: 3px solid #d8a85f;
+  border-radius: 4px;
+  background: #f4ead2;
+  font-size: 0.88rem;
+}
+.tutor-menu {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.tutor-menu button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #315e55;
+  border-radius: 10px;
+  background: transparent;
+  color: #2b3b38;
+  text-align: left;
+  cursor: pointer;
+}
+.tutor-menu button span {
+  font-size: 0.82rem;
+  opacity: 0.75;
+}
+.tutor-menu button:hover,
+.tutor-menu button:focus-visible {
+  background: #315e55;
+  color: #fff3d6;
+}
+.tutor-menu button:hover span,
+.tutor-menu button:focus-visible span {
+  opacity: 0.9;
+}
+.tutor-action {
+  justify-self: start;
+}
+.tutor-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid #e3d9c2;
+}
+.tutor-spacer {
+  flex: 1;
+}
 .desk-backdrop {
   position: fixed;
   inset: 0;

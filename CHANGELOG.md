@@ -4,7 +4,7 @@ All notable project changes are recorded here.
 
 ## Unreleased
 
-Reserved for changes planned after `0.1.0`. Add new entries here first, then move them into the next numbered release section when publishing.
+Reserved for changes planned after `0.1.1`.
 
 ### Added
 
@@ -17,6 +17,15 @@ Reserved for changes planned after `0.1.0`. Add new entries here first, then mov
 ### Fixed
 
 <!-- Add future fixes here. -->
+
+## 0.1.1 - 2026-11-26
+
+### Changed
+
+- Pembelian kini menerima harga per bal dan unit hasil dari bal, lalu menghitung biaya historis per unit sebelum menyimpan stok.
+- Hasil kemasan disebut sebagai unit hasil dari bal; satu bal dapat menghasilkan banyak unit jual.
+- Penghapusan produk kini menonaktifkan produk dan variannya secara aman, menjaga riwayat transaksi, serta menolak penghapusan jika stok masih tersedia.
+- SKU varian di Inventori sekarang opsional dan dibuat otomatis saat dikosongkan, mengikuti alur pembuatan varian di ruang 3D.
 
 ## 0.1.0 - 2026-11-26
 

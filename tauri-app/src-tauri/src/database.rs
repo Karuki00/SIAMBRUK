@@ -383,7 +383,8 @@ impl Database {
             .prepare(
                 "SELECT p.id, p.name, c.name, p.description, COUNT(v.id), p.is_active
                  FROM products p LEFT JOIN categories c ON c.id = p.category_id
-                 LEFT JOIN product_variants v ON v.product_id = p.id
+                 LEFT JOIN product_variants v ON v.product_id = p.id AND v.is_active = 1
+                 WHERE p.is_active = 1
                  GROUP BY p.id ORDER BY p.name COLLATE NOCASE",
             )
             .map_err(|error| format!("Unable to prepare products query: {error}"))?;
@@ -440,22 +441,41 @@ impl Database {
             .connection
             .lock()
             .map_err(|_| "Database lock was poisoned".to_string())?;
-        let variant_count: i64 = connection
+        let stock_total: i64 = connection
             .query_row(
-                "SELECT COUNT(*) FROM product_variants WHERE product_id = ?1",
+                "SELECT COALESCE(SUM(current_stock), 0) FROM product_variants WHERE product_id = ?1 AND is_active = 1",
                 [product_id],
                 |row| row.get(0),
             )
             .map_err(|_| "Produk tidak ditemukan".to_string())?;
-        if variant_count > 0 {
-            return Err("Produk masih memiliki varian dan tidak dapat dihapus".to_string());
+        let exists: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM products WHERE id = ?1 AND is_active = 1",
+                [product_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| "Produk tidak ditemukan".to_string())?;
+        if exists == 0 {
+            return Err("Produk tidak ditemukan".to_string());
         }
-        let changed = connection
-            .execute("DELETE FROM products WHERE id = ?1", [product_id])
+        if stock_total > 0 {
+            return Err("Produk tidak dapat dihapus karena masih memiliki stok. Kurangi stok terlebih dahulu.".to_string());
+        }
+        let transaction = connection
+            .unchecked_transaction()
+            .map_err(|error| format!("Unable to start product deletion: {error}"))?;
+        transaction
+            .execute("UPDATE product_variants SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE product_id = ?1", [product_id])
+            .map_err(|error| format!("Unable to deactivate product variants: {error}"))?;
+        let changed = transaction
+            .execute("UPDATE products SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?1", [product_id])
             .map_err(|error| format!("Unable to delete product: {error}"))?;
         if changed == 0 {
             return Err("Produk tidak ditemukan".to_string());
         }
+        transaction
+            .commit()
+            .map_err(|error| format!("Unable to commit product deletion: {error}"))?;
         Ok(())
     }
 
@@ -482,7 +502,7 @@ impl Database {
                 "SELECT v.id, v.product_id, p.name, v.sku, v.name, v.purchase_price,
                         v.selling_price, v.current_stock, v.minimum_stock
                  FROM product_variants v JOIN products p ON p.id = v.product_id
-                 WHERE (?1 IS NULL OR v.product_id = ?1)
+                 WHERE v.is_active = 1 AND p.is_active = 1 AND (?1 IS NULL OR v.product_id = ?1)
                  ORDER BY p.name COLLATE NOCASE, v.name COLLATE NOCASE",
             )
             .map_err(|error| format!("Unable to prepare variants query: {error}"))?;
