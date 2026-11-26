@@ -4,6 +4,22 @@ All notable project changes are recorded here.
 
 ## Unreleased
 
+Reserved for changes planned after `0.1.0`. Add new entries here first, then move them into the next numbered release section when publishing.
+
+### Added
+
+<!-- Add future additions here. -->
+
+### Changed
+
+<!-- Add future changes here. -->
+
+### Fixed
+
+<!-- Add future fixes here. -->
+
+## 0.1.0 - 2026-11-26
+
 ### Added
 
 - Initialized the Tauri 2 + Vue 3 + TypeScript + Vite application in `tauri-app/`.
