@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 const INITIAL_MIGRATION: &str = include_str!("../migrations/001_initial.sql");
+const INVENTORY_VALUE_MIGRATION: &str = include_str!("../migrations/002_inventory_value.sql");
 
 pub struct Database {
     connection: Mutex<Connection>,
@@ -70,6 +71,16 @@ pub struct ProductRow {
 #[derive(Debug, Deserialize)]
 pub struct NewVariant {
     pub product_id: i64,
+    pub sku: String,
+    pub name: String,
+    pub purchase_price: i64,
+    pub selling_price: i64,
+    pub minimum_stock: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateVariant {
+    pub id: i64,
     pub sku: String,
     pub name: String,
     pub purchase_price: i64,
@@ -166,6 +177,33 @@ pub struct ReportRangeRequest {
     pub period_end: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct VariantReportRequest {
+    pub variant_id: i64,
+    pub period_start: String,
+    pub period_end: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReportPoint {
+    pub date: String,
+    pub units_sold: i64,
+    pub revenue: i64,
+    pub profit: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct VariantReportStats {
+    pub variant_id: i64,
+    pub product_name: String,
+    pub variant_name: String,
+    pub current_stock: i64,
+    pub units_sold: i64,
+    pub revenue: i64,
+    pub profit: i64,
+    pub points: Vec<ReportPoint>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SmartHistoryRow {
     pub id: i64,
@@ -246,6 +284,20 @@ impl Database {
             transaction
                 .commit()
                 .map_err(|error| format!("Unable to commit migration: {error}"))?;
+        }
+        if applied < 2 {
+            let transaction = connection
+                .unchecked_transaction()
+                .map_err(|error| format!("Unable to start inventory value migration: {error}"))?;
+            transaction
+                .execute_batch(INVENTORY_VALUE_MIGRATION)
+                .map_err(|error| format!("Unable to apply inventory value migration: {error}"))?;
+            transaction
+                .execute("INSERT INTO schema_migrations (version) VALUES (2)", [])
+                .map_err(|error| format!("Unable to record inventory value migration: {error}"))?;
+            transaction
+                .commit()
+                .map_err(|error| format!("Unable to commit inventory value migration: {error}"))?;
         }
         Ok(())
     }
@@ -468,7 +520,10 @@ impl Database {
             .execute("UPDATE product_variants SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE product_id = ?1", [product_id])
             .map_err(|error| format!("Unable to deactivate product variants: {error}"))?;
         let changed = transaction
-            .execute("UPDATE products SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?1", [product_id])
+            .execute(
+                "UPDATE products SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+                [product_id],
+            )
             .map_err(|error| format!("Unable to delete product: {error}"))?;
         if changed == 0 {
             return Err("Produk tidak ditemukan".to_string());
@@ -567,6 +622,38 @@ impl Database {
         })
     }
 
+    pub fn update_variant(&self, input: UpdateVariant) -> Result<VariantRow, String> {
+        let sku = input.sku.trim();
+        let name = input.name.trim();
+        if sku.is_empty() || name.is_empty() {
+            return Err("SKU dan nama varian wajib diisi".to_string());
+        }
+        if input.purchase_price < 0 || input.selling_price < 0 || input.minimum_stock < 0 {
+            return Err("Harga dan batas stok tidak boleh negatif".to_string());
+        }
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "Database lock was poisoned".to_string())?;
+        connection
+            .execute(
+                "UPDATE product_variants SET sku = ?1, name = ?2, purchase_price = ?3, selling_price = ?4, minimum_stock = ?5, updated_at = CURRENT_TIMESTAMP WHERE id = ?6 AND is_active = 1",
+                rusqlite::params![sku, name, input.purchase_price, input.selling_price, input.minimum_stock, input.id],
+            )
+            .map_err(|error| {
+                if error.to_string().contains("UNIQUE") {
+                    "SKU sudah digunakan".to_string()
+                } else {
+                    format!("Unable to update variant: {error}")
+                }
+            })?;
+        drop(connection);
+        self.variants(None)?
+            .into_iter()
+            .find(|variant| variant.id == input.id)
+            .ok_or_else(|| "Varian tidak ditemukan".to_string())
+    }
+
     pub fn adjust_stock(&self, input: StockAdjustment) -> Result<VariantRow, String> {
         if input.quantity == 0 {
             return Err("Jumlah perubahan stok tidak boleh nol".to_string());
@@ -581,18 +668,42 @@ impl Database {
         let transaction = connection
             .transaction()
             .map_err(|error| format!("Unable to start stock transaction: {error}"))?;
-        let (stock_before, product_id): (i64, i64) = transaction
+        let (stock_before, inventory_value_before, purchase_price, product_id): (i64, i64, i64, i64) = transaction
             .query_row(
-                "SELECT current_stock, product_id FROM product_variants WHERE id = ?1",
+                "SELECT current_stock, inventory_value, purchase_price, product_id FROM product_variants WHERE id = ?1 AND is_active = 1",
                 [input.variant_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .map_err(|_| "Varian tidak ditemukan".to_string())?;
-        let stock_after = stock_before + input.quantity;
+        let stock_after = stock_before
+            .checked_add(input.quantity)
+            .ok_or_else(|| "Stok terlalu besar".to_string())?;
         if stock_after < 0 {
             return Err("Stok tidak mencukupi untuk perubahan ini".to_string());
         }
-        transaction.execute("UPDATE product_variants SET current_stock = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2", rusqlite::params![stock_after, input.variant_id]).map_err(|error| format!("Unable to update stock: {error}"))?;
+        let inventory_value_after = if input.quantity > 0 {
+            inventory_value_before
+                .checked_add(
+                    input
+                        .quantity
+                        .checked_mul(purchase_price)
+                        .ok_or_else(|| "Nilai inventori terlalu besar".to_string())?,
+                )
+                .ok_or_else(|| "Nilai inventori terlalu besar".to_string())?
+        } else if stock_after == 0 {
+            0
+        } else {
+            inventory_value_before
+                .checked_mul(stock_after)
+                .ok_or_else(|| "Nilai inventori terlalu besar".to_string())?
+                / stock_before
+        };
+        let average_cost = if stock_after > 0 {
+            inventory_value_after / stock_after
+        } else {
+            0
+        };
+        transaction.execute("UPDATE product_variants SET current_stock = ?1, inventory_value = ?2, purchase_price = ?3, updated_at = CURRENT_TIMESTAMP WHERE id = ?4", rusqlite::params![stock_after, inventory_value_after, average_cost, input.variant_id]).map_err(|error| format!("Unable to update stock: {error}"))?;
         transaction.execute("INSERT INTO inventory_movements (variant_id, movement_type, quantity, stock_before, stock_after, reason, moved_at) VALUES (?1, 'adjustment', ?2, ?3, ?4, ?5, CURRENT_TIMESTAMP)", rusqlite::params![input.variant_id, input.quantity, stock_before, stock_after, input.reason.trim()]).map_err(|error| format!("Unable to record movement: {error}"))?;
         transaction
             .commit()
@@ -633,11 +744,11 @@ impl Database {
         let purchase_id = transaction.last_insert_rowid();
         let mut total = 0_i64;
         for item in input.items {
-            let stock_before: i64 = transaction
+            let (stock_before, inventory_value_before): (i64, i64) = transaction
                 .query_row(
-                    "SELECT current_stock FROM product_variants WHERE id = ?1",
+                    "SELECT current_stock, inventory_value FROM product_variants WHERE id = ?1 AND is_active = 1",
                     [item.variant_id],
-                    |row| row.get(0),
+                    |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .map_err(|_| "Varian pembelian tidak ditemukan".to_string())?;
             let subtotal = item
@@ -647,9 +758,16 @@ impl Database {
             total = total
                 .checked_add(subtotal)
                 .ok_or_else(|| "Total pembelian terlalu besar".to_string())?;
+            let inventory_value_after = inventory_value_before
+                .checked_add(subtotal)
+                .ok_or_else(|| "Nilai inventori terlalu besar".to_string())?;
+            let stock_after = stock_before
+                .checked_add(item.quantity)
+                .ok_or_else(|| "Stok terlalu besar".to_string())?;
+            let average_cost = inventory_value_after / stock_after;
             transaction.execute("INSERT INTO purchase_items (purchase_id, variant_id, quantity, unit_cost, subtotal) VALUES (?1, ?2, ?3, ?4, ?5)", rusqlite::params![purchase_id, item.variant_id, item.quantity, item.unit_cost, subtotal]).map_err(|error| format!("Unable to create purchase item: {error}"))?;
-            transaction.execute("UPDATE product_variants SET current_stock = current_stock + ?1, purchase_price = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?3", rusqlite::params![item.quantity, item.unit_cost, item.variant_id]).map_err(|error| format!("Unable to update purchased stock: {error}"))?;
-            transaction.execute("INSERT INTO inventory_movements (variant_id, movement_type, quantity, stock_before, stock_after, reference, moved_at) VALUES (?1, 'purchase', ?2, ?3, ?4, ?5, ?6)", rusqlite::params![item.variant_id, item.quantity, stock_before, stock_before + item.quantity, purchase_id.to_string(), input.purchased_at.trim()]).map_err(|error| format!("Unable to record purchase movement: {error}"))?;
+            transaction.execute("UPDATE product_variants SET current_stock = ?1, inventory_value = ?2, purchase_price = ?3, updated_at = CURRENT_TIMESTAMP WHERE id = ?4", rusqlite::params![stock_after, inventory_value_after, average_cost, item.variant_id]).map_err(|error| format!("Unable to update purchased stock: {error}"))?;
+            transaction.execute("INSERT INTO inventory_movements (variant_id, movement_type, quantity, stock_before, stock_after, reference, moved_at) VALUES (?1, 'purchase', ?2, ?3, ?4, ?5, ?6)", rusqlite::params![item.variant_id, item.quantity, stock_before, stock_after, purchase_id.to_string(), input.purchased_at.trim()]).map_err(|error| format!("Unable to record purchase movement: {error}"))?;
         }
         transaction
             .execute(
@@ -698,7 +816,7 @@ impl Database {
         let mut total = 0_i64;
         let mut total_profit = 0_i64;
         for item in input.items {
-            let (stock_before, selling_price, purchase_price): (i64, i64, i64) = transaction.query_row("SELECT current_stock, selling_price, purchase_price FROM product_variants WHERE id = ?1 AND is_active = 1", [item.variant_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).map_err(|_| "Varian penjualan tidak ditemukan atau tidak aktif".to_string())?;
+            let (stock_before, inventory_value_before, selling_price): (i64, i64, i64) = transaction.query_row("SELECT current_stock, inventory_value, selling_price FROM product_variants WHERE id = ?1 AND is_active = 1", [item.variant_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).map_err(|_| "Varian penjualan tidak ditemukan atau tidak aktif".to_string())?;
             if stock_before < item.quantity {
                 return Err(format!(
                     "Stok tidak mencukupi untuk varian {}",
@@ -710,9 +828,21 @@ impl Database {
                 .quantity
                 .checked_mul(unit_price)
                 .ok_or_else(|| "Nilai subtotal terlalu besar".to_string())?;
+            let cogs = if item.quantity == stock_before {
+                inventory_value_before
+            } else {
+                inventory_value_before
+                    .checked_mul(item.quantity)
+                    .ok_or_else(|| "Nilai HPP terlalu besar".to_string())?
+                    / stock_before
+            };
+            let inventory_value_after = inventory_value_before - cogs;
+            let stock_after = stock_before - item.quantity;
+            let unit_cost = cogs / item.quantity;
             let profit = item
                 .quantity
-                .checked_mul(unit_price - purchase_price)
+                .checked_mul(unit_price)
+                .and_then(|revenue| revenue.checked_sub(cogs))
                 .ok_or_else(|| "Nilai keuntungan terlalu besar".to_string())?;
             total = total
                 .checked_add(subtotal)
@@ -720,9 +850,9 @@ impl Database {
             total_profit = total_profit
                 .checked_add(profit)
                 .ok_or_else(|| "Total keuntungan terlalu besar".to_string())?;
-            transaction.execute("INSERT INTO sale_items (sale_id, variant_id, quantity, unit_price, unit_cost, subtotal, profit) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)", rusqlite::params![sale_id, item.variant_id, item.quantity, unit_price, purchase_price, subtotal, profit]).map_err(|error| format!("Unable to create sale item: {error}"))?;
-            transaction.execute("UPDATE product_variants SET current_stock = current_stock - ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2", rusqlite::params![item.quantity, item.variant_id]).map_err(|error| format!("Unable to update sold stock: {error}"))?;
-            transaction.execute("INSERT INTO inventory_movements (variant_id, movement_type, quantity, stock_before, stock_after, reference, moved_at) VALUES (?1, 'sale', ?2, ?3, ?4, ?5, ?6)", rusqlite::params![item.variant_id, -item.quantity, stock_before, stock_before - item.quantity, sale_id.to_string(), input.sold_at.trim()]).map_err(|error| format!("Unable to record sale movement: {error}"))?;
+            transaction.execute("INSERT INTO sale_items (sale_id, variant_id, quantity, unit_price, unit_cost, subtotal, profit) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)", rusqlite::params![sale_id, item.variant_id, item.quantity, unit_price, unit_cost, subtotal, profit]).map_err(|error| format!("Unable to create sale item: {error}"))?;
+            transaction.execute("UPDATE product_variants SET current_stock = ?1, inventory_value = ?2, purchase_price = ?3, updated_at = CURRENT_TIMESTAMP WHERE id = ?4", rusqlite::params![stock_after, inventory_value_after, if stock_after > 0 { inventory_value_after / stock_after } else { 0 }, item.variant_id]).map_err(|error| format!("Unable to update sold stock: {error}"))?;
+            transaction.execute("INSERT INTO inventory_movements (variant_id, movement_type, quantity, stock_before, stock_after, reference, moved_at) VALUES (?1, 'sale', ?2, ?3, ?4, ?5, ?6)", rusqlite::params![item.variant_id, -item.quantity, stock_before, stock_after, sale_id.to_string(), input.sold_at.trim()]).map_err(|error| format!("Unable to record movement: {error}"))?;
         }
         transaction
             .execute(
@@ -896,6 +1026,47 @@ impl Database {
         })
     }
 
+    pub fn variant_report_stats(
+        &self,
+        request: VariantReportRequest,
+    ) -> Result<VariantReportStats, String> {
+        if request.variant_id <= 0 || request.period_start.trim().is_empty() || request.period_end.trim().is_empty() {
+            return Err("Varian dan periode laporan wajib diisi".to_string());
+        }
+        if request.period_start > request.period_end {
+            return Err("Tanggal mulai laporan tidak boleh setelah tanggal akhir".to_string());
+        }
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "Database lock was poisoned".to_string())?;
+        let (product_name, variant_name, current_stock): (String, String, i64) = connection
+            .query_row(
+                "SELECT p.name, v.name, v.current_stock FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ?1 AND v.is_active = 1 AND p.is_active = 1",
+                [request.variant_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(|_| "Varian laporan tidak ditemukan".to_string())?;
+        let (units_sold, revenue, profit): (i64, i64, i64) = connection
+            .query_row(
+                "SELECT COALESCE(SUM(si.quantity), 0), COALESCE(SUM(si.subtotal), 0), COALESCE(SUM(si.profit), 0) FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE si.variant_id = ?1 AND date(s.sold_at) BETWEEN date(?2) AND date(?3)",
+                rusqlite::params![request.variant_id, request.period_start.trim(), request.period_end.trim()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(|error| format!("Unable to calculate variant report: {error}"))?;
+        let mut statement = connection
+            .prepare("SELECT date(s.sold_at), COALESCE(SUM(si.quantity), 0), COALESCE(SUM(si.subtotal), 0), COALESCE(SUM(si.profit), 0) FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE si.variant_id = ?1 AND date(s.sold_at) BETWEEN date(?2) AND date(?3) GROUP BY date(s.sold_at) ORDER BY date(s.sold_at)")
+            .map_err(|error| format!("Unable to prepare variant report: {error}"))?;
+        let points = statement
+            .query_map(rusqlite::params![request.variant_id, request.period_start.trim(), request.period_end.trim()], |row| {
+                Ok(ReportPoint { date: row.get(0)?, units_sold: row.get(1)?, revenue: row.get(2)?, profit: row.get(3)? })
+            })
+            .map_err(|error| format!("Unable to read variant report: {error}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("Unable to map variant report: {error}"))?;
+        Ok(VariantReportStats { variant_id: request.variant_id, product_name, variant_name, current_stock, units_sold, revenue, profit, points })
+    }
+
     pub fn smart_history(&self) -> Result<Vec<SmartHistoryRow>, String> {
         let connection = self
             .connection
@@ -1064,6 +1235,94 @@ mod tests {
         assert_eq!(report.sales_today, 2);
         assert_eq!(report.revenue_today, 300);
         assert_eq!(report.profit_today, 100);
+        std::fs::remove_dir_all(directory).ok();
+    }
+
+    #[test]
+    fn repeated_purchases_use_moving_average_and_rollback_invalid_purchase() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("siambruk-average-{suffix}"));
+        let database = Database::open(&directory).expect("database should initialize");
+        let product = database
+            .create_product(NewProduct {
+                name: "Snack".to_string(),
+                category_id: None,
+                description: None,
+            })
+            .unwrap();
+        let variant = database
+            .create_variant(NewVariant {
+                product_id: product.id,
+                sku: "SNK-1".to_string(),
+                name: "250gr".to_string(),
+                purchase_price: 100,
+                selling_price: 250,
+                minimum_stock: 0,
+            })
+            .unwrap();
+        database
+            .create_purchase(NewPurchase {
+                reference: None,
+                purchased_at: "2026-11-26".to_string(),
+                notes: None,
+                items: vec![PurchaseItemInput {
+                    variant_id: variant.id,
+                    quantity: 10,
+                    unit_cost: 100,
+                }],
+            })
+            .unwrap();
+        database
+            .create_purchase(NewPurchase {
+                reference: None,
+                purchased_at: "2026-11-26".to_string(),
+                notes: None,
+                items: vec![PurchaseItemInput {
+                    variant_id: variant.id,
+                    quantity: 10,
+                    unit_cost: 200,
+                }],
+            })
+            .unwrap();
+        let after_purchases = database.variants(None).unwrap().remove(0);
+        assert_eq!(after_purchases.current_stock, 20);
+        assert_eq!(after_purchases.purchase_price, 150);
+        let sale = database
+            .create_sale(NewSale {
+                reference: None,
+                sold_at: "2026-11-26".to_string(),
+                notes: None,
+                items: vec![SaleItemInput {
+                    variant_id: variant.id,
+                    quantity: 4,
+                    unit_price: Some(250),
+                }],
+            })
+            .unwrap();
+        assert_eq!(sale.total_profit, 400);
+        assert_eq!(database.variants(None).unwrap().remove(0).current_stock, 16);
+        let invalid = database.create_purchase(NewPurchase {
+            reference: None,
+            purchased_at: "2026-11-26".to_string(),
+            notes: None,
+            items: vec![
+                PurchaseItemInput {
+                    variant_id: variant.id,
+                    quantity: 1,
+                    unit_cost: 300,
+                },
+                PurchaseItemInput {
+                    variant_id: 999_999,
+                    quantity: 1,
+                    unit_cost: 300,
+                },
+            ],
+        });
+        assert!(invalid.is_err());
+        assert_eq!(database.variants(None).unwrap().remove(0).current_stock, 16);
         std::fs::remove_dir_all(directory).ok();
     }
 }

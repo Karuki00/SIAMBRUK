@@ -5,7 +5,8 @@ use database::{
     CategoryRow, Database, DatabaseStatus, MovementRow, NewCategory, NewProduct, NewPurchase,
     NewSale, NewVariant, ProductRow, PurchaseRow, ReportRangeRequest, ReportSummary, SaleRow,
     SmartEvaluationRequest, SmartEvaluationResponse, SmartHistoryRow, StockAdjustment,
-    TransactionResult, UpdateCategory, UpdateProduct, VariantRow,
+    TransactionResult, UpdateCategory, UpdateProduct, UpdateVariant, VariantReportRequest,
+    VariantReportStats, VariantRow,
 };
 use tauri::{Manager, State};
 
@@ -71,6 +72,14 @@ fn create_variant(database: State<'_, Database>, input: NewVariant) -> Result<Va
 }
 
 #[tauri::command]
+fn update_variant(
+    database: State<'_, Database>,
+    input: UpdateVariant,
+) -> Result<VariantRow, String> {
+    database.update_variant(input)
+}
+
+#[tauri::command]
 fn adjust_stock(
     database: State<'_, Database>,
     input: StockAdjustment,
@@ -115,6 +124,14 @@ fn report_summary_range(
     request: ReportRangeRequest,
 ) -> Result<ReportSummary, String> {
     database.report_summary_range(request)
+}
+
+#[tauri::command]
+fn variant_report_stats(
+    database: State<'_, Database>,
+    request: VariantReportRequest,
+) -> Result<VariantReportStats, String> {
+    database.variant_report_stats(request)
 }
 
 #[tauri::command]
@@ -166,6 +183,7 @@ pub fn run() {
             update_product,
             list_variants,
             create_variant,
+            update_variant,
             adjust_stock,
             create_purchase,
             create_sale,
@@ -173,6 +191,7 @@ pub fn run() {
             evaluate_smart,
             report_summary,
             report_summary_range,
+            variant_report_stats,
             list_smart_history,
             list_movements,
             list_sales_history,

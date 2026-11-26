@@ -4,7 +4,7 @@ All notable project changes are recorded here.
 
 ## Unreleased
 
-Reserved for changes planned after `0.1.1`.
+Reserved for changes planned after `0.1.2`.
 
 ### Added
 
@@ -17,6 +17,19 @@ Reserved for changes planned after `0.1.1`.
 ### Fixed
 
 <!-- Add future fixes here. -->
+
+## 0.1.2 - 2026-11-26
+
+### Changed
+
+- Produk dan kategori kini dikelola dari satu menu Produk; menu Kategori terpisah dihapus dari navigasi.
+- Detail Produk kini mengelola varian, SKU, harga beli default, harga jual, dan batas stok.
+- Pembelian bal kini dapat menghasilkan beberapa varian sekaligus; biaya bal dibagi berdasarkan total unit hasil kemasan.
+- Inventori kini menggunakan ledger nilai stok dan moving average agar pembelian berulang tidak menimpa biaya stok yang sudah ada.
+- Koreksi stok tersedia dari detail Produk dan menjaga nilai inventori secara atomik.
+- Detail produk kini tampil sebagai modal lebar terpusat tanpa mengubah layout halaman Produk; modal mendukung backdrop, Escape, dan scroll internal.
+- Bilah atas kini menampilkan versi aplikasi di samping status Mode lokal pada semua menu.
+- Laporan kini menyediakan pemilihan produk dan varian, grafik garis pendapatan harian, serta ringkasan unit, pendapatan, laba, dan stok dari transaksi tersimpan.
 
 ## 0.1.1 - 2026-11-26
 

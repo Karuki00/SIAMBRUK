@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted } from "vue";
+import packageInfo from "../package.json";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { RouterLink, RouterView, useRoute } from "vue-router";
-import { BarChart3, Boxes, ChevronRight, ClipboardList, History, LayoutDashboard, Package, Settings, ShoppingCart, Sparkles, Store, Tags, Warehouse, Map } from "lucide-vue-next";
+import { BarChart3, Boxes, ChevronRight, ClipboardList, History, LayoutDashboard, Package, Settings, ShoppingCart, Sparkles, Store, Warehouse, Map } from "lucide-vue-next";
 
 const route = useRoute();
 const navigation = [
   { label: "Dashboard", to: "/", icon: LayoutDashboard },
   { label: "Produk", to: "/products", icon: Package },
-  { label: "Kategori", to: "/categories", icon: Tags },
   { label: "Inventori", to: "/inventory", icon: Warehouse },
   { label: "Pembelian", to: "/purchases", icon: ClipboardList },
   { label: "Penjualan", to: "/sales", icon: ShoppingCart },
@@ -19,6 +19,7 @@ const navigation = [
   { label: "Riwayat", to: "/history", icon: History },
 ];
 const pageTitle = computed(() => (route.meta.title as string | undefined) ?? "Dashboard");
+const appVersion = `v${packageInfo.version}`;
 
 onMounted(async () => {
   try {
@@ -85,7 +86,7 @@ onUnmounted(() => tableObserver?.disconnect());
       </div>
     </aside>
     <main class="main-content">
-      <header class="topbar"><div><p class="eyebrow">Ruang kerja inventori</p><h1>{{ pageTitle }}</h1></div><div class="topbar-meta"><span class="status-dot"></span><span>Mode lokal</span></div></header>
+      <header class="topbar"><div><p class="eyebrow">Ruang kerja inventori</p><h1>{{ pageTitle }}</h1></div><div class="topbar-meta"><span class="status-dot"></span><span>Mode lokal</span><span class="topbar-divider" aria-hidden="true"></span><span class="topbar-version">{{ appVersion }}</span></div></header>
       <div class="page-content"><RouterView /></div>
     </main>
   </div>

@@ -1,7 +1,7 @@
 # Project Status
 
 **Date:** 2026-11-26  
-**Release target:** v0.1.1  
+**Release target:** v0.1.2  
 **Phase:** Complete — MASTER_PROJECT requirements implemented and verified
 
 ## Latest Fix
@@ -22,6 +22,14 @@
 - Pembelian kini menggunakan jumlah bal, unit hasil dari bal, dan harga per bal; istilah form menjelaskan hasil kemasan dan biaya per unit tetap dihitung otomatis.
 - Penghapusan produk sudah mendukung produk yang memiliki varian tanpa stok aktif melalui soft-delete, sehingga riwayat transaksi tetap aman; produk dengan stok aktif masih dilindungi.
 - SKU varian dapat dikosongkan di Inventori; aplikasi otomatis membuat kode `SKU-...` sebelum menyimpan varian.
+- Menu Kategori telah digabung ke Produk; kategori baru dapat dibuat langsung dari form produk.
+- Detail Produk sekarang memuat editor varian dengan harga beli default dan harga jual yang dapat diubah secara terpisah.
+- Satu pembelian bal dapat dikemas menjadi beberapa varian dengan jumlah unit hasil berbeda; biaya unit dibagi dari total unit seluruh hasil bal.
+- Inventory value ledger dan moving-average costing kini digunakan untuk pembelian berulang, penjualan, dan koreksi stok; transaksi invalid dibatalkan secara atomik.
+- Koreksi stok tersedia langsung pada detail Produk/varian dengan alasan audit.
+- Detail Produk menggunakan modal lebar terpusat dengan layout stabil, backdrop, Escape untuk menutup, dan scroll internal.
+- Versi aplikasi tampil konsisten di bilah atas setiap menu bersama status Mode lokal.
+- Laporan memiliki statistik per produk dan varian dengan grafik garis pendapatan harian serta daftar ringkasan berbasis data penjualan SQLite.
 
 ## Current State
 

@@ -1,6 +1,5 @@
 import { createRouter, createWebHashHistory } from "vue-router";
 import DashboardView from "./views/DashboardView.vue";
-import CategoriesView from "./views/CategoriesView.vue";
 import ProductsView from "./views/ProductsView.vue";
 import InventoryView from "./views/InventoryView.vue";
 import SmartRankingView from "./views/SmartRankingView.vue";
@@ -13,7 +12,7 @@ import SettingsView from "./views/SettingsView.vue";
 const routes = [
   { path: "/", name: "dashboard", component: DashboardView, meta: { title: "Dashboard" } },
   { path: "/products", component: ProductsView, meta: { title: "Produk" } },
-  { path: "/categories", component: CategoriesView, meta: { title: "Kategori" } },
+  { path: "/categories", redirect: "/products" },
   { path: "/inventory", component: InventoryView, meta: { title: "Inventori" } },
   { path: "/purchases", component: OperationsView, meta: { title: "Pembelian" } },
   { path: "/sales", component: OperationsView, meta: { title: "Penjualan" } },
